@@ -12,7 +12,7 @@ github_repo: "https://github.com/wabc1994/wabc1994.github.io.git" # you code rep
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
 sidebar-about-description: "Goals determine what you going to be!"
-sidebar-avatar: /img/about-BY-gentle.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
+sidebar-avatar: /img/me.jpeg     # use absolute URL, seeing it's used in both `/` and `/about/`
 
 
 
@@ -21,9 +21,8 @@ RSS: false
 # weibo_username:     qiubaiying
 zhihu_username:     liuxiongcheng
 github_username:    wabc1994
-facebook_username:  baiying.qiu.7
+facebook_username:  Xiongcheng Liu
 
-#twitter_username:   qiubaiying
 
 
 
