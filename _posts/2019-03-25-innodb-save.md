@@ -1,10 +1,13 @@
 ---
 layout: post
-title:  "Jekyll 搭建静态博客"
+title:  "Innodb存储引擎如何Update和Select"
 date:   2019-03-25 22:14:54
 categories: jekyll
 tags: jekyll RubyGems
 comments: true
+tags:
+    - MySQL
+    - innodb
 ---
 
 * content
@@ -50,7 +53,6 @@ comments: true
 2. 通过doublewrite buffer 再分两次，每次1MB顺序地写入共享表空间的物理磁盘double write上
 3. 然后马上调用fsync函数，同步磁盘，避免缓冲写带来的问题。
 4. 在这个过程中，因为doublewrite页是连续的，因此这个过程是顺序写的。
-
 
 ![流程图](https://github.com/wabc1994/InterviewRecord/blob/master/database/pic/%E5%AD%98%E5%82%A8%E8%BF%87%E7%A8%8B.jpeg)
 
