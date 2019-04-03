@@ -34,6 +34,8 @@ tags:
 - innodb_flush_log_at_trx_commit =1 这两个参数控制MySQL
 - sync_binlog = 1  表示事务写入binlog 并使用fsync() 同步到磁盘的
 
+![GIF]({{site.baseurl}}/blob/master/img/myinnodb/Innodb.png)
+
 ![整个SQL存储引擎里面到底是什么东西](https://github.com/wabc1994/wabc1994.github.io/blob/master/img/myinnodb/Innodb.png)
 
 >每个创建一个表，磁盘都要为改变表分配一定的存储空间，关于这个问题可以查找下MySQL存储引擎的表空间
