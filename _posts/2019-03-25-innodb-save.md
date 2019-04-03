@@ -105,5 +105,6 @@ tags:
 
 # 参考链接
 
-[mysql存储引擎InnoDB插入数据的过程详解](https://blog.csdn.net/tangkund3218/article/details/47361705)
-[MySQL技术内幕InnoDB存储引擎学习笔记(第二章) - lanonola的专栏 - CSDN博客](https://blog.csdn.net/lanonola/article/details/51912534)
+- [mysql存储引擎InnoDB插入数据的过程详解](https://blog.csdn.net/tangkund3218/article/details/47361705)
+
+- [MySQL技术内幕InnoDB存储引擎学习笔记(第二章) - lanonola的专栏 - CSDN博客](https://blog.csdn.net/lanonola/article/details/51912534)
