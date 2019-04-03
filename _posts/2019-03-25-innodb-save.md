@@ -5,6 +5,9 @@ date:   2019-03-25 22:14:54
 categories: jekyll
 tags: jekyll RubyGems
 comments: true
+markdown: kramdowm
+kramdonw:
+    input: GFM
 tags:
     - MySQL
     - innodb
