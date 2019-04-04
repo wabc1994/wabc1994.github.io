@@ -68,6 +68,8 @@ tags:
 # 为何要采用double write
 
 
+![](https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Art/messaging1.gif)
+
 >两次写主要带来的是数据页的可靠性
 
 1. 数据库发生了宕机时，某个页只写了一部分，称为部分写失效
