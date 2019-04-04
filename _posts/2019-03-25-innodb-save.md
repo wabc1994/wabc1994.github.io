@@ -58,7 +58,7 @@ tags:
 4. 在这个过程中，因为doublewrite页是连续的，因此这个过程是顺序写的。
 
 
-![流程图](https://github.com/wabc1994/InterviewRecord/blob/master/database/pic/%E5%AD%98%E5%82%A8%E8%BF%87%E7%A8%8B.jpeg)
+![](https://github.com/wabc1994/InterviewRecord/blob/master/database/pic/%E5%AD%98%E5%82%A8%E8%BF%87%E7%A8%8B.jpeg)
 
 
 >innodb存储存储引擎是通过数据页来存储的，一个数据页当中可以有多个记录
