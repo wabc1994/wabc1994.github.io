@@ -42,7 +42,8 @@ N>0 — 每向二进制日志文件写入N条SQL或N个事务后，则把二进�
 
 N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操作系统决定；
 
-![](https://github.com/wabc1994/wabc1994.github.io/blob/master/img/myinnodb/Innodb.png)
+
+[![A2l1c6.md.png](https://s2.ax1x.com/2019/04/04/A2l1c6.md.png)](https://imgchr.com/i/A2l1c6)
 
 >每个创建一个表，磁盘都要为改变表分配一定的存储空间，关于这个问题可以查找下MySQL存储引擎的表空间
 
@@ -66,7 +67,6 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 4. 在这个过程中，因为doublewrite页是连续的，因此这个过程是顺序写的。
 
 
-![](https://github.com/wabc1994/InterviewRecord/blob/master/database/pic/%E5%AD%98%E5%82%A8%E8%BF%87%E7%A8%8B.jpeg)
 
 
 >innodb存储存储引擎是通过数据页来存储的，一个数据页当中可以有多个记录
@@ -75,13 +75,24 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 
 # 为何要采用double write
 
-
-![](https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Art/messaging1.gif)
-
 >两次写主要带来的是数据页的可靠性
 
 1. 数据库发生了宕机时，某个页只写了一部分，称为部分写失效
 2. 当写入失效时，先通过页的副本来还原，再进行重做，这就是double write 
+
+
+下面通过图片的形式查看具体写入的过程
+![A2lJBD.png](https://s2.ax1x.com/2019/04/04/A2lJBD.png)
+
+
+>page代表被update过后的脏页，修改过的数据,也就是存在buffer pool缓存当中数据
+
+1. copy过程，操作系统crash, 重启之后，脏页未刷到磁盘，但更早的数据并没有发生损坏，重新写入即可
+2. write到共享表空间过程中，操作系统crash，重启之后，脏页未刷到磁盘，但更早的数据并没有发生损坏，重新写入即可
+3. write到独立表空间过程中，操作系统crash，重启之后，发现：（1）数据文件内的页损坏：头尾checksum值不匹配（即出现了partial page write的问题）。从共享表空间中d的doublewrite segment内恢复该页的一个副本到数据文件，再应用redo log；（2）若页自身的checksum匹配，但与doublewrite segment中对应页的checksum不匹配，则统一可以通过apply redo log来恢复。
+4. recover 过程中，操作系统crash, 重启后，更新并没有成功刷新到磁盘当中，这个时候我们可以直接利用redo 文件
+
+
 
 
 # 案例
@@ -99,7 +110,10 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 
 # 有了redo 为何还需binlog 
 
-从上面的案例可以引出一个问题为何要redo和bin两种日志
+从上面的案例可以引出一个问题为何要redo和bin两种日志？
+
+每一个事务redo log对应一个binlog
+
 
 这样做主要是为了crash recovery 和主从备份的安全性，缺一不可。 下面分几种情况说明下
 
@@ -107,9 +121,9 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 2. prepare阶段，redo log落盘后，binlog落盘前，mysqld crash，**也就是说redolog成功写完， binlog没有成功写完**
 3. commit阶段，binlog落盘后，mysqld crash， **也就是redo和binLog 两个文件都写完了的情况**
 
-针对第一种情况
+针对第一种情况，主库修改还没有正在刷新到磁盘上，我们可以直接利用redo重做即可，不会造成数据不一致性
 
-针对第二种情况，当没有成功写入binLog 
+针对第二种情况，当没有成功写入binLog, 
 
 # 两阶段提交源码
 
