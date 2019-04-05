@@ -50,7 +50,7 @@ gems: [jekyll-paginate]
 markdown: kramdown
 kramdown:
 input: GFM                            # use Github Flavored Markdown !important
-
+highlighter: pygments
 
 
 # 评论系统
