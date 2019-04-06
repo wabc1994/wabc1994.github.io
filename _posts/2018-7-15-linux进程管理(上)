@@ -1,0 +1,407 @@
+---
+layout: post
+title:  "Linux到底是怎么创建一个进程的(上)"
+date:   2018-7-15 8:50:9
+categories: Linux
+comments: true
+tags:
+    - Linux
+    - 进程管理
+   
+---
+
+* content
+{:toc}
+
+# 前言
+无论是Java 还是c或者c++运行在Linux 服务器下，一个进程或者线程都是采用一个task 任务来表示，然后又以是否有独立的空间来区别一个线程和进程，下面我总结了下Linux 下的进程线程到底是怎么工作的。
+
+在这之前我们需要理解下Linux 系统划分原则，就是分为用户态和内核态，因此进程的运行也必须分为两个部门
+
+- 运行在用户态， 由用户stack 标志
+- 运行在内核态， 内核stack
+
+>在内核态（比如应用进程执行系统调用）时，进程运行需要自己的堆栈信息（不是原用户空间中的栈），而是使用内核空间中的栈，这个栈就是进程的内核栈
+
+
+![AW9k3d.png](https://s2.ax1x.com/2019/04/05/AW9k3d.png)
+
+**虚拟地址空间**
+ Linux的虚拟地址空间范围为0～4G，Linux内核将这4G字节的空间分为两部分，将最高的1G字节（从虚拟地址0xC0000000到0xFFFFFFFF）供内核使用，称为“内核空间”。 然后0GB-3GB空间是用户空间，是低地址。
+ 
+ ![AW9d5F.png](https://s2.ax1x.com/2019/04/05/AW9d5F.png)
+
+# 进程
+一个进程或者线程等任务是采取下结构体task_struct 表示的，然后每个进程里面的内存采用mm_struct表示
+
+
+1. task_struct
+2. mm_struct
+
+
+
+
+[![AWpAmV.md.png](https://s2.ax1x.com/2019/04/05/AWpAmV.md.png)](https://imgchr.com/i/AWpAmV)
+
+
+从上到下依次排序这下面的情况:
+
+ - 内核的虚拟空间  
+ - stack， 
+ - 内存映射区 mmap
+ - heap 主要new 或者malloc
+ - bbs segment:未初始化的全局变量或静态变量 
+ - data segment 初始化的全局变量或静态变量 
+ - text 代码段 code 
+
+## task_struct
+
+无论是进程异或还是线程都是采用结构体task_struct来创建的
+
+[![AWpapd.md.png](https://s2.ax1x.com/2019/04/05/AWpapd.md.png)](https://imgchr.com/i/AWpapd)
+
+task_struct结构使用slab allocator进行分配（slab通过对象重用的方式提高分内存使用效率）。和进程描述符相关的一个数据结构是tread_info，这个结构存储在内核栈的底部（此时栈向下扩展）或者顶部（此时栈向上扩展）。每个进程都有两个栈，用户栈和内核栈，在用户态运行时CPU堆栈指针寄存器指向用户栈地址。进程在内核态运行时，CPU堆栈指针寄存器指向内核栈地址。内核栈使用的空间很小，通常为8KB。
+
+
+```c
+struct task_struct
+{
+/* these are hardcoded - don't touch */
+  long state;     // 进程状态       /* -1 unrunnable, 0 runnable, >0 stopped */
+  long counter;
+  long priority;  
+  long signal;
+  struct sigaction sigaction[32];
+  long blocked;            /* bitmap of masked signals */
+/* various fields */
+  int exit_code;
+  unsigned long start_code, end_code, end_data, brk, start_stack;
+  long pid, father, pgrp, session, leader;
+  unsigned short uid, euid, suid;
+  unsigned short gid, egid, sgid;
+  long alarm;
+  long utime, stime, cutime, cstime, start_time;
+  unsigned short used_math;
+/* file system info */
+  int tty;            /* -1 if no tty, so it must be signed */
+  unsigned short umask;
+  struct m_inode *pwd;
+  struct m_inode *root;
+  struct m_inode *executable;
+  unsigned long close_on_exec;
+  struct file *filp[NR_OPEN];
+/* ldt for this task 0 - zero 1 - cs 2 - ds&ss */
+  struct desc_struct ldt[3];
+/* tss for this task */
+  struct tss_struct tss;
+};
+/*
+```
+
+### 进程的状态
+task\_struct的state域存储了进程当前的状态,总共有7种状态，一个进程在一个时刻只可能处于一种状态。下面列出了这7种状态。
+	
+	- TASK_RUNNING 进程正在CPU上执行，或者等待被执行（ready）
+	
+	- TASK_INTERRUPTIBLE 进程暂停中，等待一些条件为真，比如进程获得了需要的资源、接收到硬件终端、或者收到某些signal等。
+	
+	- TASK_UNINTERRUPTIBLE 和TASK_INTERRUPTIBLE类似，区别在于进程不会被signal唤醒，只能等待某些事件（资源、硬件终端等）
+	
+	- TASK_STOPPED 进程暂停执行，进程没有运行也不能进入运行状态（但是也没死），进程在接收到SIGSTOP, SIGTSTP, SIGTTIN或者SIGTTOU 信号时会进入这个状态。
+	
+	- TASK_TRACED 进程被debugger暂停了执行，例如通过ptrace()对程序进行调试。
+	
+	- EXIT_ZOMBIE 进程执行已经结束了，但是父进程还没有调用wait4()或者waitpid()来回收该进程。
+	
+	- EXIT_DEAD 进程执行已经结束了，父进程刚刚调用wait4()或者waitpid()来回收该进程，进程正在被从系统移除，这个状态主要用于避免多个进程同时对该进程调用类似wait()的函数或者系统调用
+
+
+
+### 进程优先级
+
+总体概览图
+
+![AWUXRS.png](https://s2.ax1x.com/2019/04/06/AWUXRS.png)
+
+```c
+long priority;  
+```
+
+
+**进程的分类， 依据任务来划分**
+
+1. 实时进程，就是要你即刻处理，换言之，在容忍的范围内得马上到处理，当然优先级要高，并且能够抢占其他进程。
+
+2. 普通进程
+
+这个任务不同也会影响内核所采用的进程调度算法，
+
+不同进程具有不同的优先级，Linux采用了两种不同的优先级
+	- 使用nice值：越大的nice值意味着更低的优先级(-19~20)
+	- 实时优先级：可配置，越高意味着进程优先级越高，0 – 99用于real-time processes（没有实际的意义），100 – 139用于普通进程
+
+
+**静态优先级**
+   ```
+static_pro 
+   ```
+	
+**进程调度策略**
+   
+   ```
+   unsigned int policy
+   ```
+
+
+**依据进程的作用划分**
+
+1. 孤儿进程
+   An orphan process is a computer process whose  parent process has finished or terminated, though it remains running itself.
+父亲死了，但是自己还是活着的情况
+
+2. 父进程
+  Unix系统中调用fork的都是父进程(fork调用一次返回两次)
+
+4. 守护进程
+  守护进程（Daemon Process),也就是通常说的 Daemon 进程（精灵进程），是Linux中的后台服务进程。它是一个生存期较长的进程，通常独立于控制终端并且周期性地执行某种任务或等待处理某些发生的事件，Linux的大多数服务器就是用守护进程实现的。比如，Internet服务器inetd，Web服务器httpd等。同时，守护进程完成许多系统任务
+
+ 特点：
+	- 独立于终端，不受用户进程控制
+	- 运行时间比较长，一般都是随着系统的开机关机而运行
+
+比如redis守护进程
+
+
+5. 僵尸进程
+	僵尸进程是完成了创建他的时候交给的任务,(每个线程创建的时候都是为了完成了一定的任务)
+
+
+
+### thread_info
+
+进程的上下文就是存储在thread_info 里面，
+
+
+```c
+struct thread_info {
+    struct pcb_struct   pcb;    /* palcode state */
+ 
+    struct task_struct  *task;      /* main task structure */  /*这里很重要，task指针指向的是所创建的进程的struct task_struct
+    unsigned int        flags;      /* low level flags */
+    unsigned int        ieee_state; /* see fpu.h */
+ 
+    struct exec_domain  *exec_domain;   /* execution domain */  /*表了当前进程是属于哪一种规范的可执行程序,
+                                                                        //不同的系统产生的可执行文件的差异存放在变量exec_domain中
+    mm_segment_t        addr_limit; /* thread address space */
+    unsigned        cpu;        /* current CPU */
+    int         preempt_count; /* 0 => preemptable, <0 => BUG */
+ 
+    int bpt_nsaved;
+    unsigned long bpt_addr[2];      /* breakpoint handling  */
+    unsigned int bpt_insn[2];
+ 
+    struct restart_block    restart_block;
+};
+```
+
+## mm_struct
+
+一个c或者c++进程的地址空间分为五个区， 
+在mm\_struct
+
+
+
+
+1. 一个进程的虚拟地址空间主要由两个数据结来描述。一个是最高层次的：mm\_struct，一个是较高层次的：vm\_area\_structs。
+
+2. 最高层次的mm\_struct结构描述了一个进程的整个虚拟地址空间。较高层次的结构vm\_area\_truct描述了虚拟地址空间的一个区间（简称虚拟区）。
+
+3. 每个进程只有一个mm\_struct结构，在每个进程的task\_struct结构中，有一个指向该进程的结构。可以说，mm\_struct结构是对整个用户空间的描述
+
+4. 操作start\_brk和brk 标记的堆， 是通过brk()函数和sbrk调用实现的
+
+5. mm\_base 内存映射区主要是通过mmap()和munmmap() 完成的 
+
+
+
+  ```java
+struct mm_struct {
+     unsigned long mmap_base;        /* 内存映射区 */
+     //start_code:代码段的起始地址
+     //end_code:代码段的结束地址
+     //start_data:数据段起始地址
+     //end_data:数据段结束地址
+     unsigned long start_code, end_code, start_data, end_data;
+     //start_brk:堆的起始地址
+     //brk:堆的结束地址
+     //start_stack:栈的起始地址
+     unsigned long start_brk, brk, start_stack;
+         
+         
+         //arg_start,arg_end:参数段的起始和结束地址
+     //env_start,env_end:环境段的起始和结束地址
+     unsigned long arg_start, arg_end, env_start, env_end;
+         
+         
+           //该字段主要是在vfork 的时候使用
+         
+      //引用计数；描述有多少指针指向当前的mm_struct
+      atomic_t mm_count;          /* How many references to "struct mm_struct" (users count as 1) */     
+   }
+```
+
+# 创建一个新的进程或者线程
+在Linux创建一个进程或者轻量级的进程即线程，都是通过下面三个函数进行的，
+
+1. fork
+2. vfork
+3. clone函数
+fork, vfork和clone的系统调用的入口地址分别是sys_fork, sys_vfork和sys_clone, 
+
+总体概览图
+
+[![AWPXcj.md.png](https://s2.ax1x.com/2019/04/05/AWPXcj.md.png)](https://imgchr.com/i/AWPXcj)
+
+## fork
+
+fork创造的子进程是父进程的完整副本，复制了父亲进程的资源，包括内存的内容task_struct内容，父子进程具有相同的代码块和数据等内存里面的东西，父子进程就不同的地址空间。
+
+fork调用的一个奇妙之处就是它仅仅被调用一次，却能够返回两次，它可能有三种不同的返回值：
+    
+     - 在父进程中，fork返回新创建子进程的进程ID；
+     
+     - 在子进程中，fork返回0；
+     
+     - 如果出现错误，fork返回一个负值；
+     
+们可以通过fork返回的值来判断当前进程是子进程还是父进程。
+
+```c
+#include <unistd.h>
+#include <stdio.h> 
+int main () 
+{ 
+	pid_t fpid; //fpid表示fork函数返回的值
+	int count=0;
+	fpid=fork(); 
+	if (fpid < 0) 
+		printf("error in fork!"); 
+	else if (fpid == 0) {
+		printf("i am the child process, my process id is %d/n",getpid()); 
+		printf("我是爹的儿子/n");//对某些人来说中文看着更直白。
+		count++;
+	}
+	else {
+		printf("i am the parent process, my process id is %d/n",getpid()); 
+		printf("我是孩子他爹/n");
+		count++;
+	}
+	printf("统计结果是: %d/n",count);
+	return 0;
+}
+
+```
+
+[![AWCzFO.md.png](https://s2.ax1x.com/2019/04/05/AWCzFO.md.png)](https://imgchr.com/i/AWCzFO)
+
+
+
+
+## vfork
+vfork 创建的子进程与父进程共享数据段,而且由vfork()创建的子进程将先于父进程运行  execve() 函数族执行别的任务的情况
+
+
+
+**有了fork()为何需要vfork()**
+- vfork()的诞生是在fork()还没有写时拷贝的时候，因为那个时候创建一个子进程的成本太大了，如果一下子创建好多了那么程序的效率一定会下降. 然后就有人提出了vfork(). vfork的实现原理非常简单，就是子进程，父进程完全公用一个资源. 
+
+**fork和vfork的简单区别**
+
+1. fork()： 父子进程的执行次序不确定, 父进程和孩子进程不共享地址空间
+2. vfork():  vfork()：保证子进程先运行,在它调用 exec（进程替换） 或 exit（退出进程）之后父进程才可能被调度运行。孩子和负进程共享地址空间
+
+## fork Copy-on-Write
+
+因为fork创建出来父进程的一个复制品，消耗比较大，因此演变出来写时复制技术，一开始先让孩子进程和父亲进程共享相同的地址空间(页表)， 如果后续孩子进程需要改变页表，那么再进行复制
+
+## clone
+无论是fork,还是vfork 最终底层都是通过clone，通过传递不同的参数给clone()函数，然后调用do_fork，然后do_fork里面再进行调用copy_process.
+
+
+**vfork，fork参数设置**
+1. fork使用标志位 SIGCHID // 新创建的子进程终结的时候，发送信号通知其父进程
+
+2. vfork 使用的标记位，CLONE_VFORK | CLONE_VM | SIGCHID// 新创建的子进程是要共享了父进程的数据段，
+
+
+
+clone 函数原型，
+```
+int clone(int (*fn)(void * arg), void *stack, int flags, void * arg);
+```
+### flag 标志位
+
+**flag参数**
+
+fork, vfork就是通过设置不同参数给clone的标志位flags 然后实现创建进程还是线程的， flag的标志位主要有以下个参数
+	
+	1. CLONE_VM 子进程和父进程共用内存空间
+	
+	2. CLONE_VFORK 父进程被挂起，直至子进程释放虚拟内存资源，孩子进程执行完毕或者exec() 或者exit() 操作，再执行负进程
+	
+	3. CLONE_FILES If CLONE_FILES is set, the calling process and the child process share the same file descriptor table.
+	
+	4. CLONE_FS , 父子进程共享相同的文件系统
+
+	5. CLONE_SIGHAND, 父子进程共享相同的信号处理函数
+
+
+### 调用流程
+
+- do_fork 
+
+
+- copy_process
+
+  ```c
+static struct task_struct *copy_process(unsigned long clone_flags,
+                    unsigned long stack_start,
+                    unsigned long stack_size,
+                    int __user *child_tidptr,
+                    struct pid *pid,
+                    int trace,
+                    unsigned long tls)
+
+  ```
+
+后续详细的代码可以参考下面的链接情况
+
+[进程创建之copy_process函数 - bullbat的专栏 - CSDN博客](https://blog.csdn.net/bullbat/article/details/7088484)
+
+**所以核心还是理解copy_process到底做了什么**
+
+1. 调用dum_task\_struct()为新进程创建一个内核stack,thread\_info 结构体和task\_struct这些值与当前父进程一样。此时，子进程和父亲进程的描述符还是完全相同的
+
+2. 检查新创建的子进程，当前用户所拥有的进程数目有没有超过给他分配的资源限制
+
+3. 区别父子进程描述符，
+
+
+4. 子进程状态被设置为TASK_UNINTERRUPTIBLE(不可中断)以保证它不会投入运行
+
+5. copy_process() 调用copy_flags() 以更新task\_struct的flags成员，
+
+6. 调用get\_pid为新进程获取一个有效的PID
+
+7. 根据clone() 参数， copy\_process拷贝或共享打开的文件，进程地址空间等
+
+8. copy\_process() 扫苗并返回指向子进程的指针
+
+# 参考连接
+
+- [The fork() System Call](http://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/create.html)
+
+
+- [(9条消息)Linux下进程的创建过程分析(_do_fork/do_fork详解)--Linux进程的管理与调度（八） - AderStep - CSDN博客](https://blog.csdn.net/gatieme/article/details/51569932)
+
+- [(9条消息)linux中fork（）函数详解（原创！！实例讲解） - jason的专栏 - CSDN博客](https://blog.csdn.net/jason314/article/details/5640969)
