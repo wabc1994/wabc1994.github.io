@@ -11,7 +11,6 @@ tags:
     - MVCC
     - 一致性读
     - 当前读
-   
 ---
 
 * content
@@ -153,9 +152,6 @@ InnoDB MVCC使用的内部快照的意思。在不同的隔离级别下，事务
 **read view {low\_trx\_id,up\_trx\_id,trx\_ids}**,在并发情况下，一个事务启动时。
 
 
-
-
-
 **第一种表示方法**
 
 ![Afxgpj.png](https://s2.ax1x.com/2019/04/07/Afxgpj.png)
@@ -170,7 +166,6 @@ InnoDB MVCC使用的内部快照的意思。在不同的隔离级别下，事务
 3. 如果事务是落在未提交事务集合当中，那么包括两种情况
 	- 若row trx\_id 在未提交事务集合当中，表示这个版本是由还没提交的事务生成的，不可见
 	- 若row trx\_id 不在未提交事务集合当中，表示这个版本是已经提交的事务生成的，可见的
-
 
 
 **另一种表示方法**
@@ -197,6 +192,10 @@ row_search_for_mysql(){
 - 设该行的当前事务id为row trx\_id< 视图中up\_trx
 \_id的记录对于当前read view 是一定可见的
 
+
+## 总体概览图
+
+[![Ah9PCF.md.png](https://s2.ax1x.com/2019/04/07/Ah9PCF.md.png)](https://imgchr.com/i/Ah9PCF)
 
 ## 一致性读读请求基于某个时间点得到一份那时的数据快照，而不管同时其他事务对数据的修改。
 
