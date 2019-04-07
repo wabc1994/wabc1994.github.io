@@ -1,8 +1,8 @@
 
 ---
 layout: post
-title:  "MySQL的锁机制总结以及MVCC"
-date:   2018-8-9 10:50:9
+title: "MySQL的锁机制总结以及MVCC"
+date: 2018-8-9 10:50:9
 categories: Linux
 comments: true
 tags:
