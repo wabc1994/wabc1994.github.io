@@ -10,7 +10,6 @@ tags:
     - 锁
     - MVCC
     - 一致性读
-    - 当前读
 ---
 
 * content
