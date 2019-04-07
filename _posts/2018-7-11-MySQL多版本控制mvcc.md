@@ -1,9 +1,8 @@
-
 ---
 layout: post
 title:  "MySQL锁机制总结以及MVCC"
 date:   2018-8-15 8:50:9
-categories: Linux
+categories: MySQL
 comments: true
 tags:
     - MySQL
@@ -13,7 +12,6 @@ tags:
 
 * content
 {:toc}
-
 
 # 前言 
 
