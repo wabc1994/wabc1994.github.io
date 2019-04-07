@@ -1,15 +1,14 @@
 
 ---
-layout:  post
-title:  "MySQL的锁机制总结以及MVCC"
-date:  2018-8-9 10:50:9
-categories:  Linux
-comments:  true
+layout: post
+title:  "MySQL锁机制总结以及MVCC"
+date:   2018-8-15 8:50:9
+categories: Linux
+comments: true
 tags:
     - MySQL
-    - 锁
-    - MVCC
-    - 一致性读
+    - 锁机制
+    - 
 ---
 
 * content
