@@ -1,10 +1,10 @@
 
 ---
-layout: post
-title: "MySQL的锁机制总结以及MVCC"
-date: 2018-8-9 10:50:9
-categories: Linux
-comments: true
+layout:  post
+title:  "MySQL的锁机制总结以及MVCC"
+date:  2018-8-9 10:50:9
+categories:  Linux
+comments:  true
 tags:
     - MySQL
     - 锁
@@ -14,6 +14,8 @@ tags:
 
 * content
 {:toc}
+
+
 # 前言 
 
 多版本控制是一个乐观锁，在不同的存储引擎当中具有不同的实现方式， 面试过程当中我们主要是关注innodb当中的实现？
