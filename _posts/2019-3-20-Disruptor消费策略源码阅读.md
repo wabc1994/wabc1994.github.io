@@ -80,6 +80,9 @@ Blocking strategy that uses a lock and condition variable for {@link EventProces
 
 # SequenceBarrier 调节消费者和生产者直接的接口
 
+
+Barrier 就像一个障碍，当没有可消耗的序号时，就阻挡消费者就行消费行为，当
+
 >Wait for the given sequence to be available for consumption.
 
 主要是在生成者和消费者之间架设一条桥梁，等待给定的序号可用
@@ -90,20 +93,49 @@ SequenceBarrier主要配合情况waitStratregy来使用
 public interface SequenceBarrier
 	{
 	
+	// 等seqence之前的序号可以用
 	long waitFor(long sequence) throws AlertException, InterruptedException, TimeoutException;
 	
+	
+	// 下面的操作主要是操作消费者的消费序号的问题
+	
+	// getCursor() 是获取消费者的消费序号
 		 long getCursor();
 		 
+		 // 判断是否满足该种条件的情况
 		 boolean isAlerted();
 		 
+		 // 对消费者的消费需要进行一个修改
 		 void alert();
 		 
+		 //清空该种修改情况
 		 void clearAlert();
 		 
+		 // 
 		 void checkAlert() throws AlertException;
 	}
 ```
 
 ## 如何使用
-一般都是ringbuffer关联一个 waaitstrategy和Sequencebarrier,
+一般都是ringbuffer关联一个 waaitstrategy和Sequencebarrier,  
 
+看下面的图
+
+
+[![ALTCu9.md.png](https://s2.ax1x.com/2019/04/13/ALTCu9.md.png)](https://imgchr.com/i/ALTCu9)
+
+
+比如 ConsumerBarrier extends SequenceBarrier 对象——这个对象由RingBuffer创建并且代表消费者与RingBuffer进行交互
+
+```
+final long availableSeq = consumerBarrier.waitFor(nextSequence);
+
+```
+
+
+比如我们如果设置nextSequence为12的话，现在生产者还没生产到12号，那么我们的消费者就要等待，采用上述给出的四个策略当中的某个，
+
+
+ConsumerBarrier返回RingBuffer的最大可访问序号——在上面的例子中是12。 
+
+当满足条件可以消费后
