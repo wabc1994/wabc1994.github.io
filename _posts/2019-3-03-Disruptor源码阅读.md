@@ -1,7 +1,7 @@
 
 ---
 layout: post
-title:  "Disruptor源码阅读Sequence类"
+title:  "Disruptor源码阅读之Sequence类"
 date:   2018-10-01 8:50:9
 categories: Java
 comments: true
