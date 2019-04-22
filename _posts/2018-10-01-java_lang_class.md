@@ -1,0 +1,250 @@
+---
+layout: post
+title:  "Java.lang.class源码阅读"
+date:   2018-10-01 8:50:9
+categories: Java
+comments: true
+tags:
+    - Java基础    
+    - JDK源码阅读
+   
+---
+
+* content
+{:toc}
+
+
+# 前言
+
+java.lang.class这个类是Object的直接子类，在这个类与反射reflect和Proxy动态代理等等东西关系非常大，理解Class 类是理解动态代理和反射的基础，一直想把java当中的动态代理和反射这两个重要的特性弄懂，所有就抽空看了下JDK下的源码。
+
+
+**在这个Class源码当中**
+
+与类加载器相关的部门还是很多的，在看这部分源码之前，也需要对JVM的类加载机制进行一个深入学习。
+
+
+
+
+## Object类
+
+Object类是Java的最顶层祖宗
+
+我们先来了解下Object都有哪些方法
+
+1. getClass() 这个方法是我们后面要用到的方法
+2. 与垃圾收集相关的finalize()
+3. 一般来讲我们需要重写这两个方法，在业务代码当中，equal()和hashcode()
+4. 与线程调度相关的wait()和notify()系列方法
+
+```java
+
+public class Object {
+
+    private static native void registerNatives();
+    static {
+        registerNatives();
+    }
+    // 或者一个Class 对象
+public final native Class<?> getClass();
+
+
+// 一般来讲我们需要重写这两个方法，在业务代码当中， 
+ public native int hashCode();
+  public boolean equals(Object obj) {
+        return (this == obj);
+    }
+     protected native Object clone() throws CloneNotSupportedException;
+      
+      
+      public String toString() {
+        return getClass().getName() + "@" + Integer.toHexString(hashCode());
+    }
+
+// 线程调度相关的方法通知和等待机制
+ public final native void notify();
+  public final native void notifyAll();
+   public final native void wait(long timeout) throws InterruptedException;
+ 
+ 
+ // 与垃圾收集相关的
+   protected void finalize() throws Throwable { }
+   
+```
+
+## Class
+
+Class类是用于java反射机制的，一切java类，都有一个对应的Class对象，他是一个final类。Class 类的实例表示，正在运行的 Java 应用程序中的类和接口。
+
+这个类是被声明为final类的，并且是泛型
+
+```java
+public final class Class<T> implements java.io.Serializable,
+                              GenericDeclaration,
+                              Type,
+                              AnnotatedElement {
+    private static final int ANNOTATION= 0x00002000;
+    private static final int ENUM      = 0x00004000;
+    private static final int SYNTHETIC = 0x00001000;
+
+    private static native void registerNatives();
+    static {
+        registerNatives();
+    }
+
+``` 
+
+**构造方法声明为私有的**
+这个方法只能通过JVM来代用，我们在应用程序当中是不能够像正常的类一样直接调用new 一个对象的， 因为将构造方法声明为私有的了， 没有public的公共构造方法，class对象是由jJava虚拟机在类加载的时候自动生成的
+
+
+```java
+  private Class(ClassLoader loader) {
+        // Initialize final field for classLoader.  The initialization value of non-null
+        // prevents future JIT optimizations from assuming this final field is null.
+        classLoader = loader;
+    }
+```
+## forName方法
+forName 方法是静态的，可以得到一个class对象
+
+在应用程序当中获取一个Class对象， 主要有三种方法
+
+1. forName静态方法Class.forName(类的全限定名)
+2. 自定义类对象的getClass()方法
+3. 自定义类对象的class 属性
+
+参数className是类的全限定名称
+
+```java
+public static Class<?> forName(String className)
+                throws ClassNotFoundException {
+        Class<?> caller = Reflection.getCallerClass();
+        return forName0(className, true, ClassLoader.getClassLoader(caller), caller);
+    }
+
+
+ @CallerSensitive
+    public static Class<?> forName(String name, boolean initialize,
+                                   ClassLoader loader)
+        throws ClassNotFoundException
+    {
+        Class<?> caller = null;
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null) {
+            // Reflective call to get caller class is only needed if a security manager
+            // is present.  Avoid the overhead of making this call otherwise.
+            caller = Reflection.getCallerClass();
+            if (sun.misc.VM.isSystemDomainLoader(loader)) {
+                ClassLoader ccl = ClassLoader.getClassLoader(caller);
+                if (!sun.misc.VM.isSystemDomainLoader(ccl)) {
+                    sm.checkPermission(
+                        SecurityConstants.GET_CLASSLOADER_PERMISSION);
+                }
+            }
+        }
+        return forName0(name, initialize, loader, caller);
+    }
+
+
+```
+## newInstance
+
+通过上述的forname或者getclass或者class得到一个
+
+1. 方法不需要任何参数
+
+2. 返回Class对象代表的类的实例对象，返回值是Object类型，需要进行强制转换为需要的类型；
+
+```java
+public T newInstance()
+        throws InstantiationException, IllegalAccessException
+    {
+        if (System.getSecurityManager() != null) {
+            checkMemberAccess(Member.PUBLIC, Reflection.getCallerClass(), false);
+        }
+
+        // NOTE: the following code may not be strictly correct under
+        // the current Java memory model.
+
+        // Constructor lookup
+        if (cachedConstructor == null) {
+            if (this == Class.class) {
+                throw new IllegalAccessException(
+                    "Can not call newInstance() on the Class for java.lang.Class"
+                );
+            }
+            try {
+                Class<?>[] empty = {};
+                final Constructor<T> c = getConstructor0(empty, Member.DECLARED);
+                // Disable accessibility checks on the constructor
+                // since we have to do the security check here anyway
+                // (the stack depth is wrong for the Constructor's
+                // security check to work)
+                java.security.AccessController.doPrivileged(
+                    new java.security.PrivilegedAction<Void>() {
+                        public Void run() {
+                                c.setAccessible(true);
+                                return null;
+                            }
+                        });
+                cachedConstructor = c;
+            } catch (NoSuchMethodException e) {
+                throw (InstantiationException)
+                    new InstantiationException(getName()).initCause(e);
+            }
+        }
+        Constructor<T> tmpConstructor = cachedConstructor;
+        // Security check (same as in java.lang.reflect.Constructor)
+        int modifiers = tmpConstructor.getModifiers();
+        if (!Reflection.quickCheckMemberAccess(this, modifiers)) {
+            Class<?> caller = Reflection.getCallerClass();
+            if (newInstanceCallerCache != caller) {
+                Reflection.ensureMemberAccess(caller, this, null, modifiers);
+                newInstanceCallerCache = caller;
+            }
+        }
+        // Run constructor
+        try {
+            return tmpConstructor.newInstance((Object[])null);
+        } catch (InvocationTargetException e) {
+            Unsafe.getUnsafe().throwException(e.getTargetException());
+            // Not reached
+            return null;
+        }
+    }
+```
+
+
+1. 首先进行安全性检查
+
+   ```java
+    if (System.getSecurityManager() != null) {
+            checkMemberAccess(Member.PUBLIC, Reflection.getCallerClass(), false);
+        }
+
+   ```
+2. 判断是否有缓存的构造函数，如何没有构造方法的话获取构造方法
+
+## 其他比较常用到的方法
+
+```java
+
+// 获取Class 对象的所有属性
+ private native Field[]       getDeclaredFields0(boolean publicOnly);
+ 
+// 获取Class 对象的所有方法
+    private native Method[]      getDeclaredMethods0(boolean publicOnly);
+    
+    //获取Class对象的所有构造函数
+    private native Constructor<T>[] getDeclaredConstructors0(boolean publicOnly);
+    
+    // 获取所有的类，包括
+    private native Class<?>[]   getDeclaredClasses0();
+```
+
+
+# 参考链接
+
+- [Java.lang.Class class in Java](https://www.geeksforgeeks.org/java-lang-class-class-java-set-1/)
+- [理解java.lang.Class类 ](https://blog.csdn.net/bingduanlbd/article/details/8424243/)
