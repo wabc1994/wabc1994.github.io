@@ -27,7 +27,7 @@ abstract class RingBufferPad
 2. RingBufferFields
 **RingBufferFields底层数组**
 
-   ```java
+```java
 abstract class RingBufferFields<E> extends RingBufferPad
 {
     private static final int BUFFER_PAD;
@@ -59,7 +59,9 @@ abstract class RingBufferFields<E> extends RingBufferPad
             entries[BUFFER_PAD + i] = eventFactory.newInstance();
         }
     } 
-   ```
+ ```
+   
+   
 3. Ringbuffer 源码
 
 构造函数
@@ -91,7 +93,7 @@ EventFactorys是用来生产Event的，然后Event就是Disruptor当中传输的
 
 **RingBuffer的主要代码**
  
-   ```java
+```java
    
    public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored, EventSequencer<E>, EventSink<E>
 {
@@ -114,8 +116,7 @@ EventFactorys是用来生产Event的，然后Event就是Disruptor当中传输的
                 throw new IllegalStateException(producerType.toString());
         }
     }
-
-  ```
+```
 
 **获取当前数组大小的情况** 
 
