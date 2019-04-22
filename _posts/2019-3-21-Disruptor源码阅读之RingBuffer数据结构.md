@@ -13,7 +13,7 @@ tags:
 
 # Ringbuffer核心数据结构讲解
 
-在ringbuffer之前有两个类， ringbuffer是存储和更新时间的容器
+在ringbuffer之前有两个类，ringbuffer是存储和更新时间的容器
 
 1. RingBufferPad
 
@@ -49,7 +49,6 @@ abstract class RingBufferFields<E> extends RingBufferPad
     protected final Sequencer sequencer;    
     this.bufferSize = sequencer.getBufferSize();
     }
-    
     // 往这里面填充东西 数组里面 
      private void fill(EventFactory<E> eventFactory)
     {
@@ -94,7 +93,6 @@ EventFactorys是用来生产Event的，然后Event就是Disruptor当中传输的
 **RingBuffer的主要代码**
  
 ```java
-   
    public final class RingBuffer<E> extends RingBufferFields<E> implements Cursored, EventSequencer<E>, EventSink<E>
 {
     public static final long INITIAL_CURSOR_VALUE = Sequence.INITIAL_VALUE;
