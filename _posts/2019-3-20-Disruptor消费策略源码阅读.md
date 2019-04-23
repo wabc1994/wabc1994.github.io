@@ -257,7 +257,9 @@ public interface SequenceBarrier
 	// 等seqence之前的序号可以用
 	long waitFor(long sequence) throws AlertException, InterruptedException, TimeoutException;
 	// 下面的操作主要是操作消费者的消费序号的问题
-	//     getCursor() 是获取消费者的消费序号
+	//getCursor() 是获取生产者最后在Ringbuffer里面publish
+	
+	//value of the cursor for entries that have been published.
 		 long getCursor();
 		 // 判断是否满足该种条件的情况
 		 boolean isAlerted();
@@ -270,22 +272,16 @@ public interface SequenceBarrier
 ```
 
 ## 如何使用
-一般都是ringbuffer关联一个 waaitstrategy和Sequencebarrier,  
+一般都是Ringbuffer关联一个Waitstrategy和Sequencebarrier,  
 
 看下面的图
-
-
 [![ALTCu9.md.png](https://s2.ax1x.com/2019/04/13/ALTCu9.md.png)](https://imgchr.com/i/ALTCu9)
-
-
 比如 ConsumerBarrier extends SequenceBarrier 对象——这个对象由RingBuffer创建并且代表消费者与RingBuffer进行交互
 
 ```
 final long availableSeq = consumerBarrier.waitFor(nextSequence);
 
 ```
-
-
 比如我们如果设置nextSequence为12的话，现在生产者还没生产到12号，那么我们的消费者就要等待，采用上述给出的四个策略当中的某个，
 
 
