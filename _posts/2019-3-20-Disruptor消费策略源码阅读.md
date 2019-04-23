@@ -78,40 +78,193 @@ public interface WaitStrategy
 Blocking strategy that uses a lock and condition variable for {@link EventProcessor}s waiting on a barrier.
  * However it will periodically wake up if it has been idle for specified period by throwing a
 
-# SequenceBarrier 调节消费者和生产者直接的接口
 
+## BlockingWaitStrategy
+
+主要是Object自带的锁机制，使用synchronzied 和notify()
+
+```java
+**
+ * Blocking strategy that uses a lock and condition variable for {@link EventProcessor}s waiting on a barrier.
+ * <p>
+ * This strategy can be used when throughput and low-latency are not as important as CPU resource.
+ */
+public final class BlockingWaitStrategy implements WaitStrategy
+{
+    private final Object mutex = new Object();
+
+    @Override
+    public long waitFor(long sequence, Sequence cursorSequence, Sequence dependentSequence, SequenceBarrier barrier)
+        throws AlertException, InterruptedException
+    {
+        long availableSequence;
+        if (cursorSequence.get() < sequence)
+        {
+            synchronized (mutex)
+            {
+                while (cursorSequence.get() < sequence)
+                {
+                    barrier.checkAlert();
+                    mutex.wait();
+                }
+            }
+        }
+
+        while ((availableSequence = dependentSequence.get()) < sequence)
+        {
+            barrier.checkAlert();
+            ThreadHints.onSpinWait();
+        }
+
+        return availableSequence;
+    }
+
+    @Override
+    public void signalAllWhenBlocking()
+    {
+        synchronized (mutex)
+        {
+            mutex.notifyAll();
+        }
+    }
+```
+
+
+## BusySpinStrategy
+```java
+import com.lmax.disruptor.util.ThreadHints;
+
+/**
+ * Busy Spin strategy that uses a busy spin loop for {@link com.lmax.disruptor.EventProcessor}s waiting on a barrier.
+ * <p>
+ * This strategy will use CPU resource to avoid syscalls which can introduce latency jitter.  It is best
+ * used when threads can be bound to specific CPU cores.
+ */
+public final class BusySpinWaitStrategy implements WaitStrategy
+{
+    @Override
+    public long waitFor(
+        final long sequence, Sequence cursor, final Sequence dependentSequence, final SequenceBarrier barrier)
+        throws AlertException, InterruptedException
+    {
+        long availableSequence;
+
+        while ((availableSequence = dependentSequence.get()) < sequence)
+        {
+            barrier.checkAlert();
+            ThreadHints.onSpinWait();
+        }
+
+        return availableSequence;
+    }
+
+```
+## SleepingWaitingStrategy
+主要是使用LockSupport 来阻塞线程, 先有一个尝试尝试获取的次数，如果尝试不成功的话就就进行调用yeild(),让出CPU, 如果实在不行就调用sleep() 睡眠线程 调用LockSupport.park() 阻塞线程
+
+在Java多线程中，当需要阻塞或者唤醒一个线程时，都会使用LockSupport工具类来完成相应的工作。LockSupport定义了一组公共静态方法，这些方法提供了最基本的线程阻塞和唤醒功能，而LockSupport也因此成为了构建同步组件的基础工具
+
+void parkNanos(long nanos)
+
+阻塞当前线程，超时返回，阻塞时间最长不超过nanos纳秒
+
+源码当中对该waitStrategy策略的说明情况
+
+
+>Sleeping strategy that initially spins, then uses a Thread.yield(), and
+eventually sleep (<code>LockSupport.parkNanos(n)</code>) for the minimum
+number of nanos the OS and JVM will allow while the EventProcessor are waiting on a barrier.
+This strategy is a good compromise between performance and CPU resource.
+Latency spikes can occur after quiet periods.  It will also reduce the impact
+on the producing thread as it will not need signal any conditional variables
+to wake up the event handling thread.
+
+```java
+public final class SleepingWaitStrategy implements WaitStrategy
+{
+    private static final int DEFAULT_RETRIES = 200;
+    private static final long DEFAULT_SLEEP = 100;
+    private final int retries;
+    private final long sleepTimeNs;
+    public SleepingWaitStrategy()
+    {
+        this(DEFAULT_RETRIES, DEFAULT_SLEEP);
+    }
+    public SleepingWaitStrategy(int retries)
+    {
+        this(retries, DEFAULT_SLEEP);
+    }
+    public SleepingWaitStrategy(int retries, long sleepTimeNs)
+    {
+        this.retries = retries;
+        this.sleepTimeNs = sleepTimeNs;
+    }
+    @Override
+    public long waitFor(
+        final long sequence, Sequence cursor, final Sequence dependentSequence, final SequenceBarrier barrier)
+        throws AlertException
+    {
+        long availableSequence;
+        int counter = retries;
+
+        while ((availableSequence = dependentSequence.get()) < sequence)
+        {
+            counter = applyWaitMethod(barrier, counter);
+        }ong
+        return availableSequence;
+    } 
+    @Override
+    public void signalAllWhenBlocking()
+    {
+    }
+    private int applyWaitMethod(final SequenceBarrier barrier, int counter)
+        throws AlertException
+    {
+     // 消费协调者
+        barrier.checkAlert();
+        if (counter > 100)
+        {
+            --counter;
+        }
+        else if (counter > 0)
+        {
+	// 不成功， 就让出CPU
+            --counter;
+            Thread.yield();
+        }
+        else
+        {
+	// 阻塞睡眠线程
+            LockSupport.parkNanos(sleepTimeNs);
+        }
+        return counter;
+    }
+}
+```
+
+# SequenceBarrier接口 调节消费者和生产者直接的接口
 
 Barrier 就像一个障碍，当没有可消耗的序号时，就阻挡消费者就行消费行为，当
-
 >Wait for the given sequence to be available for consumption.
 
-主要是在生成者和消费者之间架设一条桥梁，等待给定的序号可用
+主要是在生成者和消费者之间架设一条桥梁，等待给定的序号可用，这是一个接口，需要我们进行实现接口
 
 SequenceBarrier主要配合情况waitStratregy来使用
 
 ```java
 public interface SequenceBarrier
 	{
-	
 	// 等seqence之前的序号可以用
 	long waitFor(long sequence) throws AlertException, InterruptedException, TimeoutException;
-	
-	
 	// 下面的操作主要是操作消费者的消费序号的问题
-	
-	// getCursor() 是获取消费者的消费序号
+	//     getCursor() 是获取消费者的消费序号
 		 long getCursor();
-		 
 		 // 判断是否满足该种条件的情况
 		 boolean isAlerted();
-		 
 		 // 对消费者的消费需要进行一个修改
 		 void alert();
-		 
 		 //清空该种修改情况
 		 void clearAlert();
-		 
-		 // 
 		 void checkAlert() throws AlertException;
 	}
 ```
