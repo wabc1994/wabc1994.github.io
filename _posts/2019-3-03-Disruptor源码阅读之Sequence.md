@@ -17,7 +17,7 @@ tags:
 # sequence
 
 **ringbuffer与sequence**
->一个ringbuffer里面是有多个sequence组成的， 数组里面就是sequence
+>一个Ringbuffer里面是有多个Event组成的， Event里面存储数据，然后每个Event采用sequence 来标记下标
 
 
 
@@ -42,6 +42,8 @@ tags:
 
 
 4. 左右填充解决伪共享问题
+
+
 ```java
 class LhsPadding
 {
