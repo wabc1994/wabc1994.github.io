@@ -25,7 +25,14 @@ abstract class RingBufferPad
 ```
 
 2. RingBufferFields
+
 **RingBufferFields底层数组**
+
+[![EOak1s.md.png](https://s2.ax1x.com/2019/05/18/EOak1s.md.png)](https://imgchr.com/i/EOak1s) 
+
+
+内存预加载机制:对象都是new 好的，我们后期就是一个填充update 之类
+
 
 ```java
 abstract class RingBufferFields<E> extends RingBufferPad
@@ -33,28 +40,24 @@ abstract class RingBufferFields<E> extends RingBufferPad
     private static final int BUFFER_PAD;
     private static final long REF_ARRAY_BASE;
     private static final int REF_ELEMENT_SHIFT;
-    
     // 包含一个unsafe类对象情况
     private static final Unsafe UNSAFE = Util.getUnsafe();
     //indexMask = buffersize-1;
-  
     private final long indexMask;
-    
     //entries 数组存储真正的sequence
     private final Object[] entries;
-    
     // ringbuffer数组大小
     protected final int bufferSize;
-   
     protected final Sequencer sequencer;    
     this.bufferSize = sequencer.getBufferSize();
     }
-    // 往这里面填充东西 数组里面 
-     private void fill(EventFactory<E> eventFactory)
+    
+    //往这里面填充东西数组里面，空间预分配策略功能， 内存预分配原则
+    private void fill(EventFactory<E> eventFactory)
     {
         for (int i = 0; i < bufferSize; i++)
         {
-        // 内存预分配原则，一次分配的基本情况
+        // 内存预分配原则，一次分配的基本情况 ,工厂进行一个eventFactory.newInstance()
             entries[BUFFER_PAD + i] = eventFactory.newInstance();
         }
     } 
@@ -98,7 +101,7 @@ EventFactorys是用来生产Event的，然后Event就是Disruptor当中传输的
     public static final long INITIAL_CURSOR_VALUE = Sequence.INITIAL_VALUE;
     protected long p1, p2, p3, p4, p5, p6, p7;
 
- public static <E> RingBuffer<E> create(
+public static <E> RingBuffer<E> create(
         ProducerType producerType,
         EventFactory<E> factory,
         int bufferSize,
@@ -124,8 +127,6 @@ EventFactorys是用来生产Event的，然后Event就是Disruptor当中传输的
         return bufferSize;
     }
   ```
-
-
 **发布当前的事件，当生产者将一个事件填写在sequence里面后，ringbuffer就会将该事件发布，消费者可以进行消费了**
 
 发布就是通知
