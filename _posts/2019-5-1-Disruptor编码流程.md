@@ -49,7 +49,8 @@ Disruptor 要和消费者关联起来disruptor.handleEventWith(**消费者处理
  如何投递数据这一块
  
  在这里面的情况
-  ```
+  
+  ```java
   //获取得到下标
   long sequence  =ringBuffer=.next()
   
@@ -65,6 +66,8 @@ Disruptor 要和消费者关联起来disruptor.handleEventWith(**消费者处理
  
  ## 思考问题
  为何需要进行next? 这个点看起来有点奇怪
+ >主要内存预分配的原则，避免频繁地进行gc.
+ 
  
  
  
