@@ -53,7 +53,6 @@ Disruptor 要和消费者关联起来disruptor.handleEventWith(**消费者处理
   ```java
   //获取得到下标
   long sequence  =ringBuffer=.next()
-  
  // 我们知道Disruptor 采用内存预分配的策略，每一个Disruptor在使用之前都需要预先指定好大小的ringbuffer并且指定这个ringbuffer是存储什么类型的数据木 
  // 比如我们上面所讲解的orderEvent，所有在所有ringbuffe所有的sequence 当中都是一个orderEvent对象了，可能就有的orderEvent 为空而已
  // 所以下一步
@@ -67,6 +66,7 @@ Disruptor 要和消费者关联起来disruptor.handleEventWith(**消费者处理
  ## 思考问题
  为何需要进行next? 这个点看起来有点奇怪
  >主要内存预分配的原则，避免频繁地进行gc.
+ 
  
  
  
