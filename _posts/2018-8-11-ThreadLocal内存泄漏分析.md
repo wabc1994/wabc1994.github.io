@@ -61,7 +61,7 @@ private void remove(ThreadLocal<?> key) {
 ### 不适用remove()方法
 - 在线程使用完不使用remove, 清空key为null的Entry,然后value部分的内存就可以释放了
 
-```
+```java
 public class ThreadLocalTest {
     static class LocalVariable {
         private Long[] a = new Long[1024*1024];
