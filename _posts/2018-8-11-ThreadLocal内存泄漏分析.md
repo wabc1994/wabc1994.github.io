@@ -22,9 +22,12 @@ ThreadLocal出现问题主要是与线程池使用，ThreadLocal的声明周期�
 会导致内存泄漏，当线程数量变得很多，然后线程又不能及时销毁的，就会噪声内存溢出，OOM。
 
 
+weakReference<ThreadLocal>代表ThreadLocal是弱引用的情况，
+
 ```java
 static class Entry extends WeakReference<ThreadLocal<?>> {
     /** The value associated with this ThreadLocal. */
+    // 往ThreadLocal里实际塞入的值
     Object value;
     Entry(ThreadLocal<?> k, Object v) {
         super(k);
@@ -32,6 +35,9 @@ static class Entry extends WeakReference<ThreadLocal<?>> {
     }
 }
 ```
+
+**为什么需要声明为弱引用？**
+弱引用的对象活不过下一次垃圾GC之前的, 所以
 
 
 
