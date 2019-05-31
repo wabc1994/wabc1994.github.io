@@ -19,7 +19,14 @@ ThreadLocal有个静态内部类ThreadLocalMap,然后每个Thread对象都有个
 
 ThreadLocal出现问题主要是与线程池使用，ThreadLocal的声明周期跟thread绑定在一起，如果线程池里面的线程一直复用的话，对value的引用链就一直存在，但是value又使用不到，就是一个垃圾，导致无法对这部分内存如果在使用后没有正常得进行remove 操作，就导致key为null的Entry里面的value不能被GC收回掉，因此如果线程存在，这部分内存就一直存在的，
 
-会导致内存泄漏，当线程数量变得很多，然后线程又不能及时销毁的，就会噪声内存溢出，OOM。
+
+ThreadLocal并不是为线程保存对象的副本，它仅仅只起到一个索引的作用。它的主要目的视为每一个线程隔离一个类的实例**牵桥搭线使用，如果Threadlocal这个线断了，被gc了，那么value也就无法使用了** 
+
+ [![VlDPfg.md.png](https://s2.ax1x.com/2019/05/31/VlDPfg.md.png)](https://imgchr.com/i/VlDPfg)
+
+**Current Thread与Object value之间存在一条强引用关系，但是弱引用的ThreadLocal已经被回收了，线程又不可以通过ThreadLocal取到该value,存在关系，但是又使用不到，这么就很尴尬哈哈哈，要是这种情况很多，程序在线程池部门使用不当出现bug，严重情况下直接OOM**
+
+会导致内存泄漏，当线程数量变得很多，然后线程又不能及时销毁的，就会噪声内存溢出OOM。
 
 
 weakReference<ThreadLocal>代表ThreadLocal是弱引用的情况，
@@ -119,4 +126,5 @@ public class ThreadLocalTest {
 
 - 使用者需要手动调用remove函数，删除不再使用的ThreadLocal.
 - 还有尽量将ThreadLocal设置成private static的，这样ThreadLocal会尽量和线程本身一起消亡。
+- 需要好好了解Thread, ThreadLocal，ThreadLocalMap，Object value之间的关系情况， Thread持有一个ThreadLocalMap,然后ThreadlocalMap通过对ThreadLocal作为key映射得到Object value，是这么个访问逻辑。Threadlocal作为一个简单的索引的
                 
