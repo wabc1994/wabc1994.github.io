@@ -88,7 +88,7 @@ InnoDB行锁是通过给索引上的索引项加锁来实现的，只有通过�
 
 > 既然有了行锁和表锁了，为何要需要更进一步的实现多版本控制
 
-- 大多数的MYSQL事务型存储引擎，比如InnoDB,都不使用一种简单的行锁机制.事实上,他们都和MVCC–多版本并发控制来一起使用.
+- 大多数的MYSQL事务型存储引擎，比如InnoDB,都不使用一种简单的行锁机制.事实上,他们都和MVCC–多版本并发控制来一起使用，mvcc是一种读不加锁的实现机制。
 
 - 大家都应该知道,锁机制可以控制并发操作,但是其系统开销较大,而MVCC可以在大多数情况下代替行级锁,使用MVCC,能降低其系统开销.
  
@@ -119,7 +119,7 @@ set session transaction isolation level READ COMMITED;
 
 1. 六个字节的DB\_TRX\_ID:表示最近修改该行数据的事务ID
 
-2. 7个字节的DB\_ROLL\_PTR: 指向rollback segement当中的undo log,找到之前版本的数据就是通过这个列,
+2. 7个字节的DB\_ROLL\_PTR: 指向rollback segement当中的undo log,找到之前版本的数据就是通过这个列, 数据库的事务系统通过DB\_ROLL\_PTR解析找到undo log， 然后通过undo log找到旧版本事务， 形成一条链
 
 3. 6个字节的DB_ROW_ID
 
@@ -136,10 +136,26 @@ set session transaction isolation level READ COMMITED;
 
 ## read view 
 
-InnoDB MVCC使用的内部快照的意思。在不同的隔离级别下，事务启动时（有些情况下，可能是SQL语句开始时）看到的数据快照版本可能也不同
+InnoDB MVCC使用的内部快照的意思。在不同的隔离级别下，事务启动时（有些情况下，可能是SQL语句开始时）看到的数据快照版本可能也不同，
+
+我们知道读分为两种，分别是当前读和一致性读，一致性读也就是利用read view来实现的，说白了就是mvcc
+
+在普通select操作当中都是通过mvcc 不加锁实现高效读数据操作的，除了 select····lock in share mode和select···· for update 这两个，其他的
+
+- update 
+- delete
+- insert 
+- select ··· for update
+- select ··· lock in share mode 
+
+
+这些都是当前读， 当前读都是读取到最新版本的数据，二快照读是通过mvcc快照机制读取到旧版本的数据的
  
 1. 在可重读情况下，一个事务当中的所有select语句共用一个read view,也就是说只有在事务的一个select请求才创建read view
 2. 在RC隔离级别下，每个SELECT都会获取最新的read view, 也就是每个select 语句不是共用一个read view一致性读视图
+
+
+
 
 通过对别read view 视图当中的版本号
 
