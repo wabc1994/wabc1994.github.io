@@ -6,7 +6,7 @@ categories: 微服务
 comments: true
 tags:
     - 服务网格
-    - 为服务器
+    - 微服务
 ---
 
 * content
