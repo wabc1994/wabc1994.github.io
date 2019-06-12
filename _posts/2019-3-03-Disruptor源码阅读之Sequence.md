@@ -4,10 +4,8 @@ title:  "Disruptor源码阅读之Sequence类"
 date:   2018-10-01 8:50:9
 categories: Java
 comments: true
-tags:
-    - Java    
+tags:  
     - 源码阅读
-    - 并发无锁队列
     - Disruptor
 ---
 
