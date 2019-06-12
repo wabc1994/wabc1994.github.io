@@ -1,0 +1,269 @@
+---
+layout: post
+title:  "Sofa-rpc源码之代理类"
+date:   2018-10-30 8:50:9
+categories: java源码阅读
+comments: true
+tags:
+    - Java    
+    - RPC
+    - 存根Stub以及代理类Proxy
+---
+
+* content
+{:toc}
+
+# 前言
+
+客户端要调用另一台机器上JVM上面的函数，首先要明确一次调用，比如远程方法Method，参数para，我们在RPC通用设计里面一般有一个stub存根来处理一个客户端请求，保存该次请求先关的信息。
+
+在RPC里面一般都是通过创建代理类来解决这个问题，代理类拦截客户端发送的请求，保存本次调用的相关信息，然后向服务器发起调用，然后获取调用结果，在返回给客户端的情况
+
+在蚂蚁金服SofaRPC里面的ClientProxyInvoker 源码比较容易理解，可以客户端代理类到底是如何工作的情况,在服务器端ProviderProxyInvoker 同样一个存根的角色
+
+
+**总体调用框架图**
+[![VRWTPK.md.png](https://s2.ax1x.com/2019/06/12/VRWTPK.md.png)](https://imgchr.com/i/VRWTPK)
+
+
+在上面这幅图里面我简化了底层的网络通信细节，类似于TCP四层协议一样，简化成为端到端通信过程，客户单 --- 存根 --- 存根 --— 服务器
+
+
+>无论是在dubbo还是sofa-rpc当中，所有的可执行体都是以invoke的形式出现的,因此都是继承Invoker 接口类的，最终所有的执行类都变成为执行invoke方法
+
+
+## ClientProxyInvoker情况
+
+ClientProxyInvoker内置一个ConsumerConfig然后，ConsumerConfig内存一个getProxyClass()类，这个就是Proxy,创建 
+
+```java
+// 配置成为线程安全类型
+@ThreadSafe
+public class ClientProxyInvoker implements Invoker {
+    /**
+     * 对应的客户端信息, 包括获取代理类， 客户端方面的配置信息情况
+     * 
+     */
+    protected final ConsumerConfig consumerConfig;
+    
+    protected Cluster cluster;  // 代理类
+    /**
+     * 构造执行链
+     *
+     * @param bootstrap 调用端配置
+     */
+    public ClientProxyInvoker(ConsumerBootstrap bootstrap) {
+
+        this.consumerConfig = bootstrap.getConsumerConfig();
+        // 构建客户端
+        this.cluster = bootstrap.getCluster();
+    }
+    /**
+     * proxy拦截的调用
+     *
+     * @param request 请求消息
+     * @return 调用结果
+     */
+    @Override
+    public SofaResponse invoke(SofaRequest request) throws SofaRpcException {
+        // 需要返回的东西先定义一个响应体之类的
+        SofaResponse response = null;
+        Throwable throwable = null;
+        try {
+            RpcInternalContext.pushContext();
+            RpcInternalContext context = RpcInternalContext.getContext();
+            context.setProviderSide(false);
+            // 包装请求
+            decorateRequest(request);
+            try {
+                // 产生开始调用事件
+                if (EventBus.isEnable(ClientStartInvokeEvent.class)) {
+                    EventBus.post(new ClientStartInvokeEvent(request));
+                }
+                // 得到结果，集群开始处理该次请求,到底哪个集群使调动
+                response = cluster.invoke(request);
+            } catch (SofaRpcException e) {
+                throwable = e;
+                throw e;
+            } finally {
+                // 产生调用结束事件,判断调用类型，比如是异步调用，还是同步
+                if (!request.isAsync()) {
+                    if (EventBus.isEnable(ClientEndInvokeEvent.class)) {
+                        EventBus.post(new ClientEndInvokeEvent(request, response, throwable));
+                    }
+                }
+            }
+            // 包装响应
+            decorateResponse(response);
+            return response;
+        } finally {
+            RpcInternalContext.removeContext();
+            RpcInternalContext.popContext();
+        }
+    }
+    /**
+     * 包装请求
+     *
+     * @param request 请求
+     */
+    protected void decorateRequest(SofaRequest request) {
+        /* 暂时不支持隐式传参 
+        String methodName = request.getMethodName();
+         // 将接口的<sofa:param />的配置复制到invocation
+         Map params = consumerConfig.getParameters();
+         if (params != null) {
+             request.addRequestProps(params);
+         }
+         // 将方法的<sofa:param />的配置复制到invocation
+         params = (Map) consumerConfig.getMethodConfigValue(methodName, RpcConstants.CONFIG_KEY_PARAMS);
+         if (params != null) {
+             request.addRequestProps(params);
+         }*/
+    }
+    /**
+     * 包装响应
+     *
+     * @param response 响应
+     */
+    protected void decorateResponse(SofaResponse response) { //NOPMD
+    }
+    /**
+     * @return the consumerConfig
+     */
+    public ConsumerConfig<?> getConsumerConfig() {
+        return consumerConfig;
+    }
+    /**
+     * 切换客户端
+     *
+     * @param newCluster 新客户端
+     * @return 旧客户端
+     */
+    public Cluster setCluster(Cluster newCluster) {
+        // 开始切换
+        Cluster old = this.cluster;
+        this.cluster = newCluster;
+        return old;
+    }
+    /**
+     * 获取客户端
+     * @return 客户端
+     */
+    public Cluster getCluster() {
+        return this.cluster;
+    }
+```
+
+## ConsumerConfig
+
+客户端的配置主要包括下面几个
+1. 负载均衡策略，
+2. 使用的协议类型
+3. 调用类型，异步还是同步，
+4. 调用超时间处理,
+5. 获取代理类Invoker
+6. 路由配置情况
+等等
+
+```java
+public class ConsumerConfig<T> extends AbstractInterfaceConfig<T, ConsumerConfig<T>> implements Serializable 
+{
+···
+情况
+// 获取代理类是最重要的, ye
+ @Override
+    public Class<?> getProxyClass() {
+        if (proxyClass != null) {
+            return proxyClass;
+        }
+        if (generic) {
+            return GenericService.class;
+        }
+        try {
+            if (StringUtils.isNotBlank(interfaceId)) {
+            // 通过forName机制类获取代理类名
+                this.proxyClass = ClassUtils.forName(interfaceId);
+                if (!proxyClass.isInterface()) {
+                    throw ExceptionUtils.buildRuntime("consumer.interface",
+                        interfaceId, "interfaceId must set interface class, not implement class");
+                }
+            } else {
+                throw ExceptionUtils.buildRuntime("consumer.interface",
+                    "null", "interfaceId must be not null");
+            }
+        } catch (RuntimeException t) {
+            throw new IllegalStateException(t.getMessage(), t);
+        }
+        // 
+        return proxyClass;
+    }
+····
+```
+
+
+
+## ProviderProxyInvoker
+
+服务器stub存根类
+
+```java
+/**
+ * 服务端调用链入口
+ *
+ * @author <a href=mailto:zhanggeng.zg@antfin.com>GengZhang</a>
+ */
+public class ProviderProxyInvoker implements Invoker {
+    /**
+     * 对应的客户端信息，客户端配置的信息
+     */
+    private final ProviderConfig providerConfig
+    /**
+     * 过滤器执行链
+     */
+    private final FilterChain    filterChain;
+    /**
+     * 构造执行链
+     * @param providerConfig 服务端配置,
+     */
+    public ProviderProxyInvoker(ProviderConfig providerConfig) {
+        this.providerConfig = providerConfig;
+        // 最底层是调用过滤器
+        this.filterChain = FilterChain.buildProviderChain(providerConfig,
+            new ProviderInvoker(providerConfig));
+    }
+    /**
+     * proxy拦截的调用
+     * @param request 请求消息
+     * @return 调用结果
+     * @throws SofaRpcException rpc异常
+     */
+    @Override
+    //关键代码，通过执行链来获取代
+    public SofaResponse invoke(SofaRequest request) throws SofaRpcException {
+        return filterChain.invoke(request);
+    }
+    /**
+     * @return the providerConfig
+     */
+    public ProviderConfig getProviderConfig() {
+        return providerConfig;
+    }
+}
+```
+
+**核心代码,代理类执行**
+
+执行返回结果
+
+```java
+
+ public SofaResponse invoke(SofaRequest request) throws SofaRpcException {
+        return filterChain.invoke(request);
+    }
+
+```
+
+
+
+
+
