@@ -6,8 +6,7 @@ categories: MySQL
 comments: true
 tags:
     - MySQL
-    - 锁机制
-    - 
+    - 数据库
 ---
 
 * content
