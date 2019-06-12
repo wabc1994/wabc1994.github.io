@@ -2,7 +2,7 @@
 layout: post
 title:  "Disruptor waitStrategy和消费者如何消费"
 date:   2015-02-15 22:14:54
-categories: java
+categories: Java
 tags: 
   - Disruptor
   - 源码阅读
