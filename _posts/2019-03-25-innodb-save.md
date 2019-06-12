@@ -2,11 +2,10 @@
 layout: post
 title:  "Innodb存储引擎如何Update和Select"
 date:   2019-03-25 22:14:54
-categories: jekyll
+categories: MySQL
 comments: true
 tags:
     - MySQL
-    - innodb
 ---
 
 * content
