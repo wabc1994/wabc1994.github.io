@@ -142,5 +142,5 @@ Istio当中充当数据平面的就是Envoy，但是我们也可以使用NGINX�
 - Service Mesh 一般还包括数据平面和控制平面
 
 # 参考链接
-- [简单理解下什么是 Cloud Native（云原生)](https://www.imooc.com/article/281379?block_id=tuijian_wz)
+- [简单理解下什么是 Cloud Native？](https://www.imooc.com/article/281379?block_id=tuijian_wz)
 - [阿里巴巴中间团队](http://jm.taobao.org/2018/07/05/Mesh%E4%BD%93%E7%B3%BB%E4%B8%AD%E7%9A%84Envoy/#%E8%83%8C%E6%99%AF)
