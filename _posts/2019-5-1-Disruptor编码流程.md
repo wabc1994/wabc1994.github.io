@@ -86,7 +86,6 @@ public Disruptor(
     ...
 }
 ```
- 
  **生产者关键是实现Send方法**
  
  ```java
@@ -102,10 +101,87 @@ public Disruptor(
         ringBuffer.publish(next);
     }
 }
- 
  ```
  
- Disruptor最新版源码
+ 
+ **消息批处理**
+ 
+ ```java
+public EventHandlerGroup<T> handleEventsWith(final EventHandler<? super T>... handlers){
+    ...
+}
+public EventHandlerGroup<T> handleEventsWith(final EventProcessor... processors){
+    ...
+}
+public EventHandlerGroup<T> handleEventsWith(final EventProcessorFactory<T>... eventProcessorFactories){
+    ...
+}
+public EventHandlerGroup<T> handleEventsWithWorkerPool(final WorkHandler<T>... workHandlers){
+    ...
+}
+ ```
+ 
+ **简单用例**
+ ```java
+ //消费者
+public class MsgConsumer implements EventHandler<MsgEvent>{
+    private String name;
+    public MsgConsumer(String name){
+        this.name = name;
+    }
+    @Override
+    public void onEvent(MsgEvent msgEvent, long l, boolean b) throws Exception {
+        System.out.println(this.name+" -> 接收到信息： "+msgEvent.getValue());
+    }
+}
+
+//生产者处理
+public class MsgProducer {
+    private Disruptor disruptor;
+    public MsgProducer(Disruptor disruptor){
+        this.disruptor = disruptor;
+    }
+    public void send(String data){
+        RingBuffer<MsgEvent> ringBuffer = this.disruptor.getRingBuffer();
+        long next = ringBuffer.next();
+        try{
+            MsgEvent event = ringBuffer.get(next);
+            event.setValue(data);
+        }finally {
+            ringBuffer.publish(next);
+        }
+    }
+
+    public void send(List<String> dataList){
+        dataList.stream().forEach(data -> this.send(data));
+    }
+}
+
+
+//触发测试
+public class DisruptorDemo {
+    @Test
+    public void test(){
+        Disruptor<MsgEvent> disruptor = new Disruptor<>(MsgEvent::new, 1024, Executors.defaultThreadFactory());
+
+        //定义消费者
+        MsgConsumer msg1 = new MsgConsumer("1");
+        MsgConsumer msg2 = new MsgConsumer("2");
+        MsgConsumer msg3 = new MsgConsumer("3");
+
+        //绑定配置关系
+        disruptor.handleEventsWith(msg1, msg2, msg3);
+        disruptor.start();
+
+        // 定义要发送的数据
+        MsgProducer msgProducer = new MsgProducer(disruptor);
+        msgProducer.send(Arrays.asList("nihao","hah"));
+    }
+}
+
+ ```
+ 
+ # Disruptor最新版源码
  
  ```java
  public class Disruptor<T>
