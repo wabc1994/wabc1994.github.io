@@ -18,6 +18,21 @@ tags:
 - 数据库运行时，会在内存中为何一公分buffer pool， 缓存部分页。在每次对数据进行select或者update，如果数据在内存当中，比如 select 就可以查询缓存，直接返回， 不用进行磁盘I/O, 否则才进行低效率的I/O； 如果是update操作的话，先将数据页加载内存，然后对内存里面的数据进行修改，当然在对内存进行修改的过程伴随着一系列的redo log和bin log 操作， 这个是我们下面介绍的重点，理解了这个过程，我们也就理解了innodb到底是如何工作的
 
 
+**innodb存储内存**
+InnoDB存储引擎内存由以下几个部分组成：
+- 缓冲池（buffer pool）
+- 重做日志缓冲池（redo log buffer）
+- 内存池（additional memory pool）
+
+别由配置文件中的参数innodb_buffer_pool_size、innodb_log_buffer_size、innodb_additional_mem_pool_size的大小决定
+
+其中最重要的是要理解Buffer Pool 缓存冲池中缓存的数不仅据页类型有：索引页、数据页、undo页、插入缓冲（insert buffer），自适应哈希索引（adaptive hash index）、InnoDB存储的锁信息（lock info）、数据字典信息（data dictionary）等，缓冲池有数据页和索引页，只是他们占缓冲池的很大部分，InnoDB存储引擎中内存的结构如下图：
+
+[![ZS64E9.md.png](https://s2.ax1x.com/2019/06/21/ZS64E9.md.png)](https://imgchr.com/i/ZS64E9)
+
+
+
+
 **修改流程， 先判断数据是否在buffer pool当中，下面的图标没有画出redo log和bin log的修改操作，实质上采用的WAL技术，先走日志文件，再buffer pool 修改数据行记录，最后在必要的时候再讲dirty page flush到磁盘的情况， 完成整个持久化的机制**
 
 
@@ -35,6 +50,54 @@ tags:
  [![V3AE6I.md.png](https://s2.ax1x.com/2019/06/01/V3AE6I.md.png)](https://imgchr.com/i/V3AE6I)
 
 
+# 如何管理Buffer pool 
+
+Innodb存储引擎管理Buffer Pool 实质上管理方式也是跟操作系统管理内存一个道理，不可能将所有的数据都放在内存当中，必然就会涉及到内存块的替换规则， 但是由于磁盘的局部性原理，特别是数据库当中数据是16k为页的大小进行读取的，因此一般读取的时候回读取目标页加周边页的数据一起到内存当中，这个特性也决定了我们不能粗放直接得使用操作管理内存的方式，比如基于双向链表的Least recent used(LRU)算法, 热点的数据页放在链表头，冷的数据放在链表后面，更低级别的数据直接放在磁盘当中，对内存的当中数据使用一定的淘汰策略。
+
+传统的操作内存淘汰策略LRU算法在MySQL 内存管理当中是失效的，主要有下面个知识点
+1. 预读失效
+2. 缓冲池污染
+
+**什么是预读机制？**
+由于是预读机制(Read-ahead)，提前把页放到缓冲池，但最终MySQL 并没有从页当中读取数据，称为预读失效。
+
+**如何对预读失效进行优化**
+要优化预读失效，思路是：
+1. 让预读失败的页，停留在缓冲池LRU里的时间尽可能短
+2. 让真正被读取的页，才挪到缓冲池LRU的头部
+
+具体方法是：
+1. 将LRU分为两部分：
+- 新生代(new subList) 方法
+- 老年代(old sublist) 方法
+
+![ZShsZ8.png](https://s2.ax1x.com/2019/06/21/ZShsZ8.png)
+
+2. 新老生代收尾相连，即：新生代的尾(tail)连接着老生代的头(head)；
+
+3. 新页（例如被预读的页）加入缓冲池时，只加入到老生代头部
+- 如果数据真正被读取(预读成功)，才会被加入到新生代的头部
+- 如果数据没有被读取，则会被新生代里的“热数据页”更早被淘汰出缓冲池
+
+
+**预读失效**
+innodb为了防止缓存污染：
+
+>也就是说，在我们扫描数据量比较大的一个表时，有可能将整个表的数据都缓存到LRU链表里，淘汰掉其他有用的数据，为了防止这种情况，innodb引入了一个机制：先将数据移动到旧LRU链表中，然后如果超过了1S，那么就会移动到热数据LRU里。
+
+
+**什么叫MySQL缓冲污染池**
+当一个SQL语句，要批量扫面大量数据时，可能会把缓冲池的所有页都替换出去，导致大量热数据被换出，MYSQL性能下降得很快，这种情况叫做缓冲池污染池。
+
+
+**MySQL如何解决缓冲池失效的问题**
+在移动数据时，会把数据移动到旧LRU链表的头部，当出现全表扫描时，InnoDB先将数据块载入到旧LRU链表上，程序读取数据块，因为这时，数据块在旧LRU链表中的停留时间还不到innodb_old_blocks_time（1S），所以不会被转移到热LRU链表中这就避免了Buffer Pool被污染的情况。
+
+**分为多种循环链表管理不同的buffer pool**
+LRU链表包含所有读入内存的数据页：
+- Flush_list包含被修改过的脏页；
+- unzip_LRU包含所有解压页；
+- Free list上存放当前空闲的block,当前空闲的内存块，
 
 # 存储引擎进行update
 
@@ -44,7 +107,7 @@ tags:
 2. 双缓冲区 Doublewrite buffer 
 3. 磁盘当中的数据文件.idb，表空间
 6. binlog 二进制文件，主要是存储在服务器层面，binlog 主要是作为redo log 实现数据库事务二阶段提交的协调者角色，处于redo log 第一阶段的prepare之后，就写入binlog,然后就是事务的commit 
-7. double write
+7. Double write
 
 **思考**
 从上面的过程来看，有一个问题就是为何数据的修改现在内存的buffer pool？如果此时宕机了呢，重启，那么内存当中的数据不久不见了吗，事务的修改也就不见了，
