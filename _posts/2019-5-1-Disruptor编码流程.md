@@ -614,9 +614,7 @@ public class DisruptorDemo {
     }
     /**
      * Gets the sequence value for the specified event handlers.
-     *
-     * @param b1 eventHandler to get the sequence for.
-     * @return eventHandler's sequence
+   
      */
     public long getSequenceValueFor(final EventHandler<T> b1)
     {
@@ -680,7 +678,6 @@ public class DisruptorDemo {
         {
             eventProcessors[i] = processorFactories[i].createEventProcessor(ringBuffer, barrierSequences);
         }
-
         return handleEventsWith(eventProcessors);
     }
     EventHandlerGroup<T> createWorkerPool(
@@ -694,5 +691,4 @@ public class DisruptorDemo {
         return new EventHandlerGroup<>(this, consumerRepository, workerSequences);
     }
  ```
- 
-  [![EHvRsA.md.png](https://s2.ax1x.com/2019/05/16/EHvRsA.md.png)](https://imgchr.com/i/EHvRsA)
+
