@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Innodb存储引擎如何Update和Select"
+title:  "数据库存储引擎如何Update和Select"
 date:   2019-03-25 22:14:54
 categories: MySQL
 comments: true
@@ -129,13 +129,6 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 [![A2l1c6.md.png](https://s2.ax1x.com/2019/04/04/A2l1c6.md.png)](https://imgchr.com/i/A2l1c6)
 
 >每个创建一个表，磁盘都要为改变表分配一定的存储空间，关于这个问题可以查找下MySQL存储引擎的表空间
-
-
-
-
-
-
-
 对一个数据库当中的数据进行update 或者insert 后，是先到内存的，同时磁盘 
 
 
@@ -176,9 +169,6 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 3. write到独立表空间过程中，操作系统crash，重启之后，发现：（1）数据文件内的页损坏：头尾checksum值不匹配（即出现了partial page write的问题）。从共享表空间中d的doublewrite segment内恢复该页的一个副本到数据文件，再应用redo log；（2）若页自身的checksum匹配，但与doublewrite segment中对应页的checksum不匹配，则统一可以通过apply redo log来恢复。
 4. recover 过程中，操作系统crash, 重启后，更新并没有成功刷新到磁盘当中，这个时候我们可以直接利用redo 文件
 
-
-
-
 # 案例
 比如 update user set name="liuxiongcheng" where id=5; 这个一条SQL语句为一个事务案例
 
@@ -200,8 +190,6 @@ N=0 — 不主动刷新二进制日志文件的数据到磁盘上，而是由操
 从上面的案例可以引出一个问题为何要redo和bin两种日志？
 
 每一个事务redo log对应一个binlog
-
-
 这样做主要是为了crash recovery 和主从备份的安全性，缺一不可。 下面分几种情况说明下
 
 1. prepare阶段，redo log落盘前，mysqld crash， **也就是redo log 和binlog都没有成功写完**
@@ -223,10 +211,6 @@ XA 两阶段提交协议，Binlog作为事务协调者，
     - write/sync Binlog；
     - InnoDB commit 
     
-
-
-
-
 1. prepare 阶段，写入redo log， lsn 代表redo log文件的写入位置序号，InnoDB 事务进入 prepare 状态, 
 
 ```java
@@ -283,14 +267,10 @@ trx_flush_log_if_needed_low(
     }
 } 
 ```
-
 3. commit阶段，binlog 写盘，InooDB 事务进入 commit 状态
 
 
 每个事务binlog的末尾，会记录一个 XID event，标志着事务是否提交成功，该标记用于recovery 过程中，binlog 最后一个 XID event 之后的内容都应该被 purge。
-
-
-
 
 # checkpoint机制
 思考之前的数据安全性问题，当出现宕机时，我们需要依靠重做日志进行recovery, 那么这个时候就会带来一个问题， redo log 是一个顺序写入的文件，那不可能将redo log里面记录的所有操作都重做一遍，这种效率是非常低效的情况，那么肯定要思考对这种情况进行一个优化，让recovery 工作有规律可循，知道从哪个位置处的redo log记录的事务是已经flush到磁盘的了,  哪一部分是由于故障丢失的，宕机导致的没有及时flush到磁盘， 这就引入了checkpoint 机制,，当然mysql checkPoint 机制还不止上述一个功能，innobd存储引擎还可以通过checkpoint来控制buffer pool 里面dirty page flush到磁盘操作。
@@ -324,17 +304,172 @@ Sharp Checkpoint 发生在数据库关闭时将所有的脏页都刷新回磁盘
 
 3. Async/Sync Flush checkpoint,用在重做日志不可用的时候，情况
 
-
 4. Drity Page too much,
 即脏页的数量太多，导致InnoDB存储引擎强制进行Checkpoint。其目的总的来说还是为了保证缓冲池中有足够可用的页。其可由参数innodb_max_dirty_pages_pct控制：
 
 innodb_max_dirty_pages_pct值为75表示，当缓冲池中脏页的数量占据75%时，强制进行Checkpoint，刷新一部分的脏页到磁盘。在InnoDB 1.0.x版本之前，该参数默认值为90，之后的版本都为75。
 
+
+数据库存储引擎是如何工作的，本文主要从关系型数据MySQL Innodb和非关系数据leveldb key value 键值数据库来讲解。
+
+
+# leveldb put和delete操作
+与关系型数据innodb采用B+树不同，键值型数据库level db主要采用
+log structure merger tree 来作为存储结构， 充分将内存和磁盘的不同特点。
+## LSMT特点 
+ “LSMT”的架构提供了一些有趣的行为： 写入操作总是很快速，并且不用考虑数据集的大小（追加）并是写入到内存当中的memtable文件； 随机读取或者通过读取内存或者通过一次快速的磁盘寻道来完成 。然而，该如何处理更新和删除操作呢？
+ 
+ 
+但是内存当中memtable 最后是要持久化到磁盘sstable, 一旦SSTable被写入磁盘，它就不再可变，因此，更新和删除操作不能通过操作SSTable来实现；即使sstable可变，我们也要经历一个漫长磁盘的搜索过程，查找某个特定的key, 这个速度是很慢的，并且要经过磁盘寻道和旋转等耗时操作.
+
+**结论**
+因此leveldb 优化update 和delete 开销的主要思路是如何避免磁盘查找，尽量跟写入操作一样，写入到内存操作。
+ 
+## 解决方案
+leveldb当中解决这个问题很巧妙的做法就是将update和delete操作都变成Put操作,我们知道put操作是写入到内存当中的memtable,写入速度很快，
+
+比如删除一个sstable里<key,value>，我们调用update入口后，更新操作会通过write操作往memtable 追加一条激励<key, 新的value> ， '墓碑'标记就代表这条记录是作废了，如果是delete 操作，我们就往memtable里面写入记录
+<key,’墓碑‘>操作，在后期的读操作会获取到更新的或有墓碑标记的记录，而不会获取到旧值；
+
+
+puth和delete的实现都是通过封装Write来实现的，函数调用关系如下：
+
+- leveldb:DBImpl:put => leveldb:DB:Put=>leveldb::DBImpl::write
+- leveldb:DBImpl:Delete => leveldb:DB:Delete=>leveldb::DBImpl::write
+
+**疑问**
+这也会到带一个问题，如果频繁更新某个key, 那么岂不是memetable对同一个key会存在很多个<key,'墓碑'>,或者多个无效的旧数据版本,堆积起来也是占据一定的系统存储空间，因此有必要定期或者定量对sstable里面过期的数据进行清理，这就是compression 压缩要做的工作了, compaction process 压缩工作进程会进行合并sstable和去除对应旧数据版本，
+
+
+在leveldb当中Compaction会从大的类别分为两种，分别是
+1. MinorCompaction, 指的是immutable memtable 持久化到为sst 文件
+2. Major Compaction, 指的是sst文件之间的merger和compaction
+
+其中删除旧版本无效数据就放在major compaction 过程当中，
+
+```java
+void WriteBatch::Delete(const Slice& key) {
+  WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);//操作总数加1
+  rep_.push_back(static_cast<char>(kTypeDeletion));//写入操作类型
+  PutLengthPrefixedSlice(&rep_, key);//写入待删除数据的key值
+}
+```
+
+数据库定义文件
+```c
+class DB {
+ public:
+  // Open the database with the specified "name".
+  // Stores a pointer to a heap-allocated database in *dbptr and returns
+  // OK on success.
+  // Stores NULL in *dbptr and returns a non-OK status on error.
+  // Caller should delete *dbptr when it is no longer needed.
+  static Status Open(const Options& options,
+                     const std::string& name,
+                     DB** dbptr);
+// 构造函数
+  DB() { }
+  // 析构函数
+  virtual ~DB();
+  // Set the database entry for "key" to "value".  Returns OK on success,
+  // and a non-OK status on error.
+  // Note: consider setting options.sync = true.
+  virtual Status Put(const WriteOptions& options,
+                     const Slice& key,
+                     const Slice& value) = 0;
+  // Remove the database entry (if any) for "key".  Returns OK on
+  // success, and a non-OK status on error.  It is not an error if "key"
+  // did not exist in the database.
+  // Note: consider setting options.sync = true.
+  virtual Status Delete(const WriteOptions& options, const Slice& key) = 0;
+
+  // Apply the specified updates to the database.
+  // Returns OK on success, non-OK on failure.
+  // Note: consider setting options.sync = true.
+  virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
+
+  // If the database contains an entry for "key" store the
+  // corresponding value in *value and return OK.
+  //
+  // If there is no entry for "key" leave *value unchanged and return
+  // a status for which Status::IsNotFound() returns true.
+  //
+
+//先利用布隆过滤器查找是sstable否存在某个值key，
+  virtual Status Get(const ReadOptions& options,
+                     const Slice& key, std::string* value) = 0;
+
+  // Return a heap-allocated iterator over the contents of the database.
+  // The result of NewIterator() is initially invalid (caller must
+  // call one of the Seek methods on the iterator before using it).
+  //
+  // Caller should delete the iterator when it is no longer needed.
+  // The returned iterator should be deleted before this db is deleted.
+  virtual Iterator* NewIterator(const ReadOptions& options) = 0;
+
+  // Return a handle to the current DB state.  Iterators created with
+  // this handle will all observe a stable snapshot of the current DB
+  // state.  The caller must call ReleaseSnapshot(result) when the
+  // snapshot is no longer needed.
+  virtual const Snapshot* GetSnapshot() = 0;
+
+  // Release a previously acquired snapshot.  The caller must not
+  // use "snapshot" after this call.
+  virtual void ReleaseSnapshot(const Snapshot* snapshot) = 0;
+
+  // DB implementations can export properties about their state
+  // via this method.  If "property" is a valid property understood by this
+  // DB implementation, fills "*value" with its current value and returns
+  // true.  Otherwise returns false.
+ 
+ 
+   // Valid property names include:
+  //
+  //  "leveldb.num-files-at-level<N>" - return the number of files at level <N>,
+  //     where <N> is an ASCII representation of a level number (e.g. "0").
+  //  "leveldb.stats" - returns a multi-line string that describes statistics
+  //     about the internal operation of the DB.
+  //  "leveldb.sstables" - returns a multi-line string that describes all
+  //     of the sstables that make up the db contents.
+  //  "leveldb.approximate-memory-usage" - returns the approximate number of
+  //     bytes of memory in use by the DB.
+  virtual bool GetProperty(const Slice& property, std::string* value) = 0;
+
+  // For each i in [0,n-1], store in "sizes[i]", the approximate
+  // file system space used by keys in "[range[i].start .. range[i].limit)".
+  //
+  // Note that the returned sizes measure file system space usage, so
+  // if the user data compresses by a factor of ten, the returned
+  // sizes will be one-tenth the size of the corresponding user data size.
+  //
+  // The results may not include the sizes of recently written data.
+  virtual void GetApproximateSizes(const Range* range, int n,
+                                   uint64_t* sizes) = 0;
+
+  // Compact the underlying storage for the key range [*begin,*end].
+  // In particular, deleted and overwritten versions are discarded,
+  // and the data is rearranged to reduce the cost of operations
+  // needed to access the data.  This operation should typically only
+  // be invoked by users who understand the underlying implementation.
+  //
+  // begin==NULL is treated as a key before all keys in the database.
+  // end==NULL is treated as a key after all keys in the database.
+  // Therefore the following call will compact the entire database:
+  //    db->CompactRange(NULL, NULL);
+  virtual void CompactRange(const Slice* begin, const Slice* end) = 0;
+
+ private:
+  // No copying allowed
+  // 外接无法访问其拷贝构造函数
+  DB(const DB&);
+  void operator=(const DB&);
+};
+
+``` 
+
 # 总结
-
-上面的这个存储过程也可以总结：先写入日志再写入到磁盘，一个事务采用的是两阶段提交的东西
-
-通过这种机制， Innodb 通过事务日志将随机I/O 变成顺序I/O， 这大大提高了Innodb 写入时的性能问题
+- 上面的这个存储过程也可以总结：先写入日志再写入到磁盘，一个事务采用的是两阶段提交的东西
+通过这种机制， Innodb 通过事务日志将随机I/O 变成顺序I/O， 这大大提高了Innodb 写入时的性能问题。
 
 
 # 意义
@@ -346,11 +481,7 @@ innodb_max_dirty_pages_pct值为75表示，当缓冲池中脏页的数量占据7
 
 1. 先持久化日志，再持久化数据，这样当系统崩溃时，虽然数据没有持久化，但是Redo Log已经持久化，我们可以通过redo log 重做日志实现。
 
-
-更多
-
 [MySQL · 引擎特性 · WAL那些事儿](http://mysql.taobao.org/monthly/2018/07/01/)
-
 
 # 参考链接
 
