@@ -11,6 +11,16 @@ tags:
 * content
 {:toc}
 
+
+# 前言
+数据库存储引擎是如何工作的，本文主要从关系型数据MySQL Innodb和非关系数据leveldb key value 键值数据库来讲解。无论是关系型还是非关系型数据库，一个优秀的数据存储组织者- 存储引擎都需要考虑下面个点
+
+- 索引组织
+- 缓存管理， 冷热数据分开存储
+- 事务管理， 高可用等方案，崩溃恢复， 数据一致性ACID 等
+- 查询优化，无论是结构化的SQL语句还是key-value的put(), delete等简单查询
+
+
 # 数据记录是如何存储在innodb引擎
 
 - 首先，在innobd当中，数据库的物理存储是会分成多个页，以页为单位，多个记录存储在一个页当中，数据每一次I/O, 读取的单位是一个页。
@@ -338,10 +348,14 @@ puth和delete的实现都是通过封装Write来实现的，函数调用关系�
 - leveldb:DBImpl:Delete => leveldb:DB:Delete=>leveldb::DBImpl::write
 
 **疑问**
-这也会到带一个问题，如果频繁更新某个key, 那么岂不是memetable对同一个key会存在很多个<key,'墓碑'>,或者多个无效的旧数据版本,堆积起来也是占据一定的系统存储空间，因此有必要定期或者定量对sstable里面过期的数据进行清理，这就是compression 压缩要做的工作了, compaction process 压缩工作进程会进行合并sstable和去除对应旧数据版本，
+这也会到带一个问题，如果频繁更新某个key, 那么岂不是memetable对同一个key会存在很多个<key,'墓碑'>,或者多个无效的旧数据版本,堆积起来也是占据一定的系统存储空间，因此有必要定期或者定量对sstable里面过期的数据进行清理，这就是compression 压缩要做的工作了, compaction process 压缩工作进程会进行合并sstable和去除对应旧数据版本，因此利用LSMT 树作为存储结构的数据一般都具有 在磁盘当中的Compaction 工作步骤，作用可以总结为下面两个点
 
+- 为了丢弃不再被使用的旧版本数据，清理他们所占据的空间
+- 为了控制LSMT树的层次结构， 一般LSM树的形状都是层次越低(从高到底), 数据量，少量热数据存储在高层次的树，大量的冷数据存储在低层次的树当中， 这么做主要是为了优化读性能
 
-在leveldb当中Compaction会从大的类别分为两种，分别是
+[![ZVQpUP.md.png](https://s2.ax1x.com/2019/06/25/ZVQpUP.md.png)](https://imgchr.com/i/ZVQpUP)
+
+在leveldb当中Compaction会从大的类别分为两种， compactions 分别是
 1. MinorCompaction, 指的是immutable memtable 持久化到为sst 文件
 2. Major Compaction, 指的是sst文件之间的merger和compaction
 
@@ -354,6 +368,23 @@ void WriteBatch::Delete(const Slice& key) {
   PutLengthPrefixedSlice(&rep_, key);//写入待删除数据的key值
 }
 ```
+
+## 为何需要Compaction
+
+compaction是leveldb中最核心的东西了。
+
+1. 前面我们说过，当用户调用delete删除一个键值时，leveldb并没有真正把它删除掉，而只是简单将这个键值对的type标记为kTypeDeletion，然后和正常的键值对一样写盘。这个特点使得leveldb的写操作很快，但是问题也是很显然的，就是会造成大量无效数据，占用磁盘空间。
+2. 除此之外，leveldb添加数据时并不会将过期的key-value覆盖，而是通过序列号将其当成完全不同的key写入进去，因此会使得系统中存在很多过期数据。，毫无疑问这也是很占用空间的。
+
+而compaction操作可以解决这些问题。通过compaction，leveldb可以将过期的key丢弃，而且在一定条件下丢弃标记为kTypeDeletion的数据。同时通过compaction控制了每层的文件数目。可以说compaction是leveldb的写操作得以高效的主要原因。
+
+
+**compaction如何操作**
+对于磁盘当中的多个层次间的LSMT树我们该如何进行压缩，才能有利于我们进行高效地读取数据，让冷热数据从上层开始到下层，这样读取出来也是比较好的处理方式
+
+关于这部分内容可以参考下阿里提出的数据库存储引擎X-Engine，是如何对这部门内容进行一个优化的，
+
+# leveldb源码
 
 数据库定义文件
 ```c
@@ -490,3 +521,5 @@ class DB {
 - [MySQL技术内幕InnoDB存储引擎学习笔记(第二章)](https://blog.csdn.net/lanonola/article/details/51912534)
 
 - [MySQL · 源码分析 · binlog crash recovery](http://mysql.taobao.org/monthly/2018/07/05/)
+
+- [阿里技术-X-Engine](https://mp.weixin.qq.com/s/Sif4d8zqKPuhVq25m0SXGA)
